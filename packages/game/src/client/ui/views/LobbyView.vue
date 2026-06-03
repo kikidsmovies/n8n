@@ -105,8 +105,9 @@ onMounted(async () => {
   if (auth.token) {
     socketStore.connect(auth.token)
     socketStore.on('game_start', (payload: unknown) => {
-      const data = payload as { roomId: string; players: any[]; itemBoxes: any[]; maze: any }
-      gameStore.initGame(data, socketStore.socket.value?.id ?? '')
+      const data = payload as { roomId: string; players: any[]; itemBoxes: any[]; maze: any; myPlayerId: string }
+      // Server sends myPlayerId directly so there's no socket ID mismatch
+      gameStore.initGame(data, data.myPlayerId ?? socketStore.socket.value?.id ?? '')
       router.push('/game')
     })
   }

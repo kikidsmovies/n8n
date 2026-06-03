@@ -22,12 +22,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
   renderer.outputColorSpace = THREE.SRGBColorSpace
 
   const scene = new THREE.Scene()
-  scene.fog = new THREE.FogExp2(0x0a0a1a, 0.025)
-  scene.background = new THREE.Color(0x0a0a1a)
+  scene.fog = new THREE.FogExp2(0x050510, 0.016)
+  scene.background = new THREE.Color(0x050510)
 
-  const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 200)
-  camera.position.set(0, 8, -6)
-  camera.lookAt(0, 0, 0)
+  const camera = new THREE.PerspectiveCamera(65, canvas.clientWidth / canvas.clientHeight, 0.1, 300)
+  camera.position.set(0, 20, -6)
+  camera.lookAt(0, 0, 8)
 
   const clock = new THREE.Clock()
 

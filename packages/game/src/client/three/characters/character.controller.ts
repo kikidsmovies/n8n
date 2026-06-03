@@ -36,6 +36,7 @@ export class CharacterController {
   constructor(playerId: string, username: string, _skinId: string, colorIndex: number) {
     this.playerId = playerId
     this.group = new THREE.Group()
+    this.group.scale.setScalar(1.4)  // scale up for better visibility from top-down
 
     const color = PLAYER_COLORS[colorIndex % PLAYER_COLORS.length]
     const skinColor = 0xffddaa
@@ -91,7 +92,7 @@ export class CharacterController {
     this.group.add(tip)
 
     // ---- Player dynamic light ----
-    this.light = new THREE.PointLight(color, 2.0, 6)
+    this.light = new THREE.PointLight(color, 3.5, 8)
     this.light.position.set(0, 1.8, 0)
     this.group.add(this.light)
 

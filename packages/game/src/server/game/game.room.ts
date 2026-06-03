@@ -159,12 +159,17 @@ export class GameRoom {
       player.position = this.getSpawnPosition(i++)
     }
 
-    this.io.to(this.id).emit(EVENTS.GAME_START, {
+    // Emit game_start to each player individually, including their own ID
+    const commonPayload = {
       roomId: this.id,
       maze: { seed: grid.seed, width: grid.width, height: grid.height, cells: this.serializeMaze() },
       players: Array.from(this.players.values()).map(this.serializePlayer),
       itemBoxes: Array.from(this.itemBoxes.values()),
-    })
+    }
+    for (const [socketId] of this.players) {
+      const sock = this.io.sockets.sockets.get(socketId)
+      if (sock) sock.emit(EVENTS.GAME_START, { ...commonPayload, myPlayerId: socketId })
+    }
 
     setTimeout(() => this.startGame(), 3000)
   }
@@ -190,6 +195,7 @@ export class GameRoom {
       id: p.id, username: p.username, position: p.position, rotation: p.rotation,
       hp: p.hp, maxHp: p.maxHp, weaponId: p.weaponId, skinId: p.skinId,
       collectedDiamonds: p.collectedDiamonds, kills: p.kills, isDead: p.isDead,
+      effects: p.effects ?? [],
     }
   }
 

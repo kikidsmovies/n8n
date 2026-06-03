@@ -57,10 +57,14 @@ export function buildMaze(scene: THREE.Scene, maze: MazeData): { group: THREE.Gr
       uTime: { value: 0 },
     },
   })
-  const floorGeo = new THREE.PlaneGeometry(maze.width * CELL_SIZE, maze.height * CELL_SIZE)
+  const mazeW = maze.width * CELL_SIZE
+  const mazeH = maze.height * CELL_SIZE
+  const EXT = 80  // extra floor border beyond maze
+
+  const floorGeo = new THREE.PlaneGeometry(mazeW + EXT * 2, mazeH + EXT * 2)
   const floor = new THREE.Mesh(floorGeo, floorMat)
   floor.rotation.x = -Math.PI / 2
-  floor.position.set((maze.width * CELL_SIZE) / 2, 0, (maze.height * CELL_SIZE) / 2)
+  floor.position.set(mazeW / 2, 0, mazeH / 2)
   floor.receiveShadow = true
   group.add(floor)
 
@@ -71,10 +75,10 @@ export function buildMaze(scene: THREE.Scene, maze: MazeData): { group: THREE.Gr
     uniforms: { uTime: { value: 0 } },
     side: THREE.BackSide,
   })
-  const ceilGeo = new THREE.PlaneGeometry(maze.width * CELL_SIZE, maze.height * CELL_SIZE)
+  const ceilGeo = new THREE.PlaneGeometry(mazeW + EXT * 2, mazeH + EXT * 2)
   const ceil = new THREE.Mesh(ceilGeo, ceilMat)
   ceil.rotation.x = -Math.PI / 2
-  ceil.position.set((maze.width * CELL_SIZE) / 2, WALL_HEIGHT, (maze.height * CELL_SIZE) / 2)
+  ceil.position.set(mazeW / 2, WALL_HEIGHT, mazeH / 2)
   group.add(ceil)
 
   // ---- Walls ----

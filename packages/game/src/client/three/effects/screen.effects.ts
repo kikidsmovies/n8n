@@ -14,9 +14,9 @@ export class ScreenEffects {
   private flashDuration = 0
   private flashElapsed = 0
 
-  private targetFov = 75
-  private currentFov = 75
-  readonly baseFov = 75
+  private targetFov = 65
+  private currentFov = 65
+  readonly baseFov = 65
 
   constructor(camera: THREE.PerspectiveCamera, scene: THREE.Scene) {
     this.camera = camera

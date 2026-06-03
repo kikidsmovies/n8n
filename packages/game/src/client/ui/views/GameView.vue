@@ -127,8 +127,8 @@ function startRenderLoop() {
 
     // Speed effect FOV
     const myPlayer = gameStore.myPlayer
-    const hasSpeed = myPlayer?.effects.some((e) => e.type === 'speed')
-    screenFX?.setTargetFov(hasSpeed ? 88 : 75)
+    const hasSpeed = (myPlayer?.effects ?? []).some((e) => e.type === 'speed')
+    screenFX?.setTargetFov(hasSpeed ? 78 : 65)
 
     // Camera follows own player
     if (myPlayer && sceneCtx && cameraCtrl) {
@@ -156,7 +156,7 @@ function updateCharacters(dt: number, time: number) {
     }
     ctrl.setPosition(state.position.x, state.position.z)
     ctrl.setRotation(state.rotation)
-    const hasShield = state.effects.some((e) => e.type === 'shield')
+    const hasShield = (state.effects ?? []).some((e) => e.type === 'shield')
     ctrl.update(dt, ctrl.isMovingNow(), state.isDead, hasShield, time)
   }
 

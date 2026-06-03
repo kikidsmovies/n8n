@@ -113,14 +113,15 @@ export function generateMaze(width: number, height: number, seed: number): { gri
     }
   }
 
-  // Spawn positions at corners
+  // Spawn positions — offset from corners into maze so camera view is centered
+  const q = Math.floor(width / 4)  // quarter point
   const spawnPositions = [
-    { x: 0 * CELL_SIZE + CELL_SIZE / 2, z: 0 * CELL_SIZE + CELL_SIZE / 2 },
-    { x: (width - 1) * CELL_SIZE + CELL_SIZE / 2, z: 0 * CELL_SIZE + CELL_SIZE / 2 },
-    { x: 0 * CELL_SIZE + CELL_SIZE / 2, z: (height - 1) * CELL_SIZE + CELL_SIZE / 2 },
-    { x: Math.floor(width / 2) * CELL_SIZE + CELL_SIZE / 2, z: 0 * CELL_SIZE + CELL_SIZE / 2 },
-    { x: 0 * CELL_SIZE + CELL_SIZE / 2, z: Math.floor(height / 2) * CELL_SIZE + CELL_SIZE / 2 },
-    { x: Math.floor(width / 2) * CELL_SIZE + CELL_SIZE / 2, z: Math.floor(height / 2) * CELL_SIZE + CELL_SIZE / 2 },
+    { x: q * CELL_SIZE + CELL_SIZE / 2,           z: q * CELL_SIZE + CELL_SIZE / 2 },            // top-left quadrant
+    { x: (width - q - 1) * CELL_SIZE + CELL_SIZE / 2, z: (height - q - 1) * CELL_SIZE + CELL_SIZE / 2 }, // bottom-right
+    { x: (width - q - 1) * CELL_SIZE + CELL_SIZE / 2, z: q * CELL_SIZE + CELL_SIZE / 2 },            // top-right
+    { x: q * CELL_SIZE + CELL_SIZE / 2,           z: (height - q - 1) * CELL_SIZE + CELL_SIZE / 2 }, // bottom-left
+    { x: Math.floor(width / 2) * CELL_SIZE + CELL_SIZE / 2, z: q * CELL_SIZE + CELL_SIZE / 2 },      // top-center
+    { x: Math.floor(width / 2) * CELL_SIZE + CELL_SIZE / 2, z: Math.floor(height / 2) * CELL_SIZE + CELL_SIZE / 2 }, // center
   ]
 
   const grid: MazeGrid = { cells, width, height, seed, exitX, exitZ, spawnPositions }

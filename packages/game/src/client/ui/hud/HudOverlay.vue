@@ -11,7 +11,7 @@
 
     <!-- Weapon info -->
     <div class="hud-weapon">
-      <div class="weapon-icon">{{ weaponEmoji }}</div>
+      <div class="weapon-icon">{{ weaponEmoji_ }}</div>
       <div class="weapon-name">{{ weaponName }}</div>
     </div>
 
