@@ -27,6 +27,8 @@ export class CharacterController {
   private arm: THREE.Mesh
   private light: THREE.PointLight
   private nameLabel: THREE.Sprite
+  private groundGlow: THREE.Mesh
+  private groundRing: THREE.Mesh
   private prevX = 0
   private prevZ = 0
   private walkPhase = 0
@@ -101,6 +103,36 @@ export class CharacterController {
     this.nameLabel.position.y = 2.55
     this.group.add(this.nameLabel)
 
+    // ---- Ground glow disc (soft bloom-ready halo) ----
+    const glowGeo = new THREE.CircleGeometry(0.88, 24)
+    const glowMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.18,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    })
+    this.groundGlow = new THREE.Mesh(glowGeo, glowMat)
+    this.groundGlow.rotation.x = -Math.PI / 2
+    this.groundGlow.position.y = 0.01
+    this.group.add(this.groundGlow)
+
+    // ---- Ground ring (crisp emissive ring) ----
+    const ringGeo = new THREE.RingGeometry(0.48, 0.72, 32)
+    const ringMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    })
+    this.groundRing = new THREE.Mesh(ringGeo, ringMat)
+    this.groundRing.rotation.x = -Math.PI / 2
+    this.groundRing.position.y = 0.015
+    this.group.add(this.groundRing)
+
     // ---- Shield (hidden by default) ----
     this.shield = new ShieldEffect()
     this.group.add(this.shield.group)
@@ -150,6 +182,14 @@ export class CharacterController {
 
     // Pulse light
     this.light.intensity = 2.0 + Math.sin(time * 3) * 0.4
+
+    // Ground glow ring — pulse + scale when moving
+    const ringOpacity = isMoving ? 0.65 + Math.sin(time * 10) * 0.2 : 0.35 + Math.sin(time * 2) * 0.15
+    const ringScale = isMoving ? 1.35 : 1.0
+    ;(this.groundRing.material as THREE.MeshBasicMaterial).opacity = ringOpacity
+    ;(this.groundGlow.material as THREE.MeshBasicMaterial).opacity = ringOpacity * 0.35
+    this.groundRing.scale.setScalar(ringScale)
+    this.groundGlow.scale.setScalar(ringScale * 1.2)
 
     // Shield
     if (hasShield) {

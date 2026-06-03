@@ -51,6 +51,12 @@
       </div>
     </Transition>
 
+    <!-- Exit compass -->
+    <div class="exit-compass" :style="{ transform: `rotate(${exitAngleDeg}deg)` }">
+      <div class="compass-arrow">▲</div>
+    </div>
+    <div class="exit-label">EXIT</div>
+
     <!-- Controls hint -->
     <div class="controls-hint">
       <span>WASD Move</span>
@@ -100,6 +106,18 @@ function effectEmoji(type: string): string {
 const rankedPlayers = computed(() => {
   return Array.from(gameStore.players.values()).sort((a, b) => b.collectedDiamonds - a.collectedDiamonds)
 })
+
+const exitAngleDeg = computed(() => {
+  const p = myPlayer.value
+  const maze = gameStore.mazeData
+  if (!p || !maze) return 45
+  const CELL_SIZE = 2.0
+  const exitX = (maze.width - 1) * CELL_SIZE + CELL_SIZE / 2
+  const exitZ = (maze.height - 1) * CELL_SIZE + CELL_SIZE / 2
+  const dx = exitX - p.position.x
+  const dz = exitZ - p.position.z
+  return Math.atan2(dx, -dz) * (180 / Math.PI)
+})
 </script>
 
 <style scoped>
@@ -112,17 +130,39 @@ const rankedPlayers = computed(() => {
 .hud-health {
   position: absolute;
   bottom: 80px; left: 20px;
-  display: flex; align-items: center; gap: 8px;
-  background: rgba(0,0,0,0.5);
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(0,0,0,0.65);
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  backdrop-filter: blur(8px);
 }
 
-.hp-label { font-size: 0.75rem; color: rgba(255,255,255,0.6); font-weight: 700; }
-.hp-bar-bg { width: 120px; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden; }
-.hp-bar { height: 100%; border-radius: 5px; transition: width 0.3s, background 0.3s; }
-.hp-value { font-size: 0.8rem; color: #fff; font-weight: 700; min-width: 60px; }
+.hp-label { font-size: 0.8rem; color: rgba(255,255,255,0.65); font-weight: 900; letter-spacing: 1px; }
+.hp-bar-bg {
+  width: 150px; height: 14px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+}
+.hp-bar {
+  height: 100%;
+  border-radius: 7px;
+  transition: width 0.25s ease-out, background 0.3s;
+  box-shadow: 0 0 8px currentColor;
+  position: relative;
+}
+.hp-bar::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 4px; right: 4px;
+  height: 3px;
+  background: rgba(255,255,255,0.35);
+  border-radius: 2px;
+}
+.hp-value { font-size: 0.85rem; color: #fff; font-weight: 700; min-width: 65px; }
 
 .hud-weapon {
   position: absolute;
@@ -226,4 +266,35 @@ const rankedPlayers = computed(() => {
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.exit-compass {
+  position: absolute;
+  bottom: 82px; right: 20px;
+  width: 44px; height: 44px;
+  background: rgba(0,0,0,0.6);
+  border: 2px solid rgba(0,255,136,0.5);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 12px rgba(0,255,136,0.3);
+  transition: transform 0.15s ease-out;
+}
+
+.compass-arrow {
+  color: #00ff88;
+  font-size: 1.2rem;
+  text-shadow: 0 0 8px #00ff88;
+  line-height: 1;
+}
+
+.exit-label {
+  position: absolute;
+  bottom: 64px; right: 20px;
+  width: 44px;
+  text-align: center;
+  font-size: 0.6rem;
+  color: #00ff88;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-shadow: 0 0 6px #00ff88;
+}
 </style>

@@ -70,6 +70,52 @@ async function submit() {
   width: 100%;
   height: 100%;
   background: radial-gradient(ellipse at center, #1a1a3e 0%, #0a0a1a 100%);
+  overflow: hidden;
+  position: relative;
+}
+
+.login-container::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 38px,
+      rgba(60, 100, 255, 0.06) 38px,
+      rgba(60, 100, 255, 0.06) 40px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 38px,
+      rgba(60, 100, 255, 0.06) 38px,
+      rgba(60, 100, 255, 0.06) 40px
+    );
+  animation: gridMove 8s linear infinite;
+  pointer-events: none;
+}
+
+.login-container::after {
+  content: '';
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(68,102,255,0.12) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: pulse-bg 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes gridMove {
+  from { transform: translate(0, 0); }
+  to   { transform: translate(40px, 40px); }
+}
+
+@keyframes pulse-bg {
+  0%, 100% { transform: scale(0.9); opacity: 0.6; }
+  50%       { transform: scale(1.1); opacity: 1; }
 }
 
 .login-box {

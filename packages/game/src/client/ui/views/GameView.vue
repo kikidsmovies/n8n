@@ -65,6 +65,7 @@ let weaponFX: WeaponEffects | null = null
 let skybox: THREE.Mesh | null = null
 let floorMat: THREE.ShaderMaterial | null = null
 let ceilMat: THREE.ShaderMaterial | null = null
+let dustMat: THREE.ShaderMaterial | null = null
 let animFrameId: number | null = null
 let inputInterval: ReturnType<typeof setInterval> | null = null
 
@@ -124,6 +125,7 @@ function startRenderLoop() {
     if (skybox) updateSkybox(skybox, time)
     if (floorMat) floorMat.uniforms.uTime.value = time
     if (ceilMat) ceilMat.uniforms.uTime.value = time
+    if (dustMat) dustMat.uniforms.uTime.value = time
 
     // Speed effect FOV
     const myPlayer = gameStore.myPlayer
@@ -357,6 +359,7 @@ function buildMazeScene() {
   const result = buildMaze(sceneCtx.scene, gameStore.mazeData)
   floorMat = result.floorMat
   ceilMat = result.ceilMat
+  dustMat = result.dustMat
 }
 
 onMounted(() => {

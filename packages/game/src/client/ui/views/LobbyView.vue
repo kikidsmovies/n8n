@@ -126,6 +126,25 @@ onUnmounted(() => {
   background: radial-gradient(ellipse at center, #1a1a3e 0%, #0a0a1a 100%);
   color: #fff;
   font-family: Arial, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+.lobby::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 38px, rgba(60,100,255,0.045) 38px, rgba(60,100,255,0.045) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 38px, rgba(60,100,255,0.045) 38px, rgba(60,100,255,0.045) 40px);
+  animation: gridMove 10s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes gridMove {
+  from { transform: translate(0, 0); }
+  to   { transform: translate(40px, 40px); }
 }
 
 .lobby-header {
@@ -135,6 +154,8 @@ onUnmounted(() => {
   padding: 16px 24px;
   background: rgba(0,0,0,0.4);
   border-bottom: 1px solid rgba(100,150,255,0.2);
+  position: relative;
+  z-index: 1;
 }
 
 .logo {
@@ -175,6 +196,8 @@ onUnmounted(() => {
   gap: 20px;
   padding: 24px;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 .left-panel, .right-panel {
@@ -245,12 +268,36 @@ onUnmounted(() => {
   font-size: 1.3rem;
   font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 6px 25px rgba(255,60,60,0.5);
+  box-shadow: 0 6px 25px rgba(255,60,60,0.5), 0 0 0 0 rgba(255,60,60,0.4);
   transition: transform 0.1s, box-shadow 0.2s;
   letter-spacing: 1px;
+  animation: playPulse 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
 }
 
-.btn-play:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,60,60,0.7); }
+.btn-play::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -60%;
+  width: 40%; height: 200%;
+  background: rgba(255,255,255,0.15);
+  transform: skewX(-20deg);
+  animation: btnShine 3s ease-in-out infinite;
+}
+
+@keyframes playPulse {
+  0%, 100% { box-shadow: 0 6px 25px rgba(255,60,60,0.5), 0 0 0 0 rgba(255,60,60,0); }
+  50%       { box-shadow: 0 8px 30px rgba(255,60,60,0.7), 0 0 0 10px rgba(255,60,60,0); }
+}
+
+@keyframes btnShine {
+  0%   { left: -60%; }
+  30%  { left: 120%; }
+  100% { left: 120%; }
+}
+
+.btn-play:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 35px rgba(255,60,60,0.8); }
 
 .hint { margin-top: 12px; font-size: 0.8rem; color: rgba(255,255,255,0.4); }
 

@@ -62,18 +62,37 @@ function goLobby() {
 .win-screen {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0,0,0,0.88);
   z-index: 100;
+  overflow: hidden;
+}
+
+.win-screen::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 48px, rgba(255,215,0,0.03) 48px, rgba(255,215,0,0.03) 50px),
+    repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(255,215,0,0.03) 48px, rgba(255,215,0,0.03) 50px);
+  animation: winGrid 6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes winGrid {
+  from { transform: translate(0, 0); }
+  to   { transform: translate(50px, 50px); }
 }
 
 .win-box {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
   border-radius: 20px;
   padding: 40px;
   min-width: 440px;
   text-align: center;
   animation: slideIn 0.5s ease-out;
+  position: relative;
+  box-shadow: 0 0 60px rgba(0,0,0,0.5);
 }
 
 @keyframes slideIn { from { transform: scale(0.8) translateY(-20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
@@ -81,7 +100,8 @@ function goLobby() {
 .trophy, .skull { font-size: 4rem; margin-bottom: 8px; animation: bounce 0.6s ease-out; }
 @keyframes bounce { 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
 
-.winner-banner h1 { color: #ffd700; font-size: 2.5rem; font-weight: 900; text-shadow: 0 0 30px rgba(255,215,0,0.8); }
+.winner-banner h1 { color: #ffd700; font-size: 2.5rem; font-weight: 900; text-shadow: 0 0 30px rgba(255,215,0,0.8), 0 0 60px rgba(255,215,0,0.4); animation: goldPulse 1.5s ease-in-out infinite; }
+@keyframes goldPulse { 0%,100% { text-shadow: 0 0 20px rgba(255,215,0,0.6); } 50% { text-shadow: 0 0 50px rgba(255,215,0,1.0), 0 0 80px rgba(255,180,0,0.6); } }
 .loser-banner h1 { color: #ff6666; font-size: 2.5rem; font-weight: 900; }
 p { color: rgba(255,255,255,0.6); margin-bottom: 24px; }
 

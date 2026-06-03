@@ -29,10 +29,10 @@ export function createPostprocessing(
   composer.addPass(renderPass)
 
   const bloomEffect = new BloomEffect({
-    intensity: 2.2,
-    luminanceThreshold: 0.35,
-    luminanceSmoothing: 0.1,
-    radius: 0.85,
+    intensity: 3.5,
+    luminanceThreshold: 0.2,
+    luminanceSmoothing: 0.05,
+    radius: 0.9,
     levels: 8,
   })
 
