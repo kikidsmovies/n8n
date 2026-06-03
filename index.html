@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeastArena</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0f; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script>
+// ── CONSTANTS ──────────────────────────────────────────────────────────────
+const W = 800, H = 600;
+const NEON = {
+  blue: 0x00d4ff, red: 0xff0040, green: 0x00ff88,
+  purple: 0xbf00ff, orange: 0xff6600, gold: 0xffd700,
+  white: 0xffffff, bg: 0x0a0a0f
+};
+const TEAM_COLORS = [NEON.blue, NEON.red];
+const TEAM_HEX    = ['#00d4ff', '#ff0040'];
+const ROUNDS_TO_WIN = 3;
+
+const SKINS_DATA = {
+  Normal: { color: NEON.blue,   glowColor: NEON.blue,   trail: NEON.blue,   shape: 'circle'  },
+  Dragon: { color: NEON.orange, glowColor: NEON.orange, trail: 0xff3300,    shape: 'dragon'  },
+  Ghost:  { color: 0x9999ff,    glowColor: NEON.white,  trail: 0xccccff,    shape: 'circle', alpha: 0.65 },
+  Cyber:  { color: NEON.green,  glowColor: NEON.green,  trail: NEON.green,  shape: 'cyber'   },
+  Royal:  { color: NEON.gold,   glowColor: NEON.gold,   trail: NEON.gold,   shape: 'royal'   },
+  Shadow: { color: 0x220033,    glowColor: NEON.purple, trail: NEON.purple, shape: 'shadow'  },
+};
+const SKIN_ORDER = ['Normal','Dragon','Ghost','Cyber','Royal','Shadow'];
+
+const WEAPONS_DATA = {
+  Laser:  { speed: 600, damage: 1,   count: 1, spread: 0,    aoe: 0,  cooldown: 280, tex: 'blt_laser' },
+  Spread: { speed: 480, damage: 0.5, count: 3, spread: 0.28, aoe: 0,  cooldown: 380, tex: 'blt_laser' },
+  Bomb:   { speed: 210, damage: 2,   count: 1, spread: 0,    aoe: 80, cooldown: 700, tex: 'blt_bomb'  },
+};
+
+const UPGRADES_LIST = [
+  { id: 'speed',  name: 'HYPERDRIVE',   desc: 'Move Speed +20%', icon: '>' },
+  { id: 'shot',   name: 'OVERCHARGE',   desc: 'Shot Size +50%',  icon: '*' },
+  { id: 'heal',   name: 'REGENERATE',   desc: 'Restore 1 Life',  icon: '+' },
+  { id: 'shield', name: 'PHASE SHIELD', desc: 'Shield for 5s',   icon: 'O' },
+  { id: 'rapid',  name: 'OVERCLOCK',    desc: 'Fire Rate x2',    icon: '#' },
+];
+
+// ── GAME STATE ─────────────────────────────────────────────────────────────
+const GS = {
+  teams: [
+    { id: 0, name: 'Team Blue', color: NEON.blue, wins: 0, treasury: 0 },
+    { id: 1, name: 'Team Red',  color: NEON.red,  wins: 0, treasury: 0 },
+  ],
+  round: 0,
+  newSkin: null,
+  playerCfg: [
+    { teamId: 0, weapon: 'Laser', skin: 'Normal',
+      keys: { up:'W', down:'S', left:'A', right:'D', shoot:'F' } },
+    { teamId: 1, weapon: 'Laser', skin: 'Normal',
+      keys: { up:'UP', down:'DOWN', left:'LEFT', right:'RIGHT', shoot:'L' } },
+  ],
+  resetAll() {
+    this.teams.forEach(t => { t.wins = 0; t.treasury = 0; });
+    this.round = 0;
+  }
+};
+
+// ── AUDIO MANAGER ──────────────────────────────────────────────────────────
+class AudioManager {
+  constructor() {
+    this._ctx = null;
+    this._amb = null;
+    const init = () => { if (!this._ctx) this._ctx = new (window.AudioContext || window.webkitAudioContext)(); };
+    document.addEventListener('pointerdown', init, { once: true });
+    document.addEventListener('keydown', init, { once: true });
+  }
+  _ctx_safe() {
+    if (!this._ctx) this._ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this._ctx.state === 'suspended') this._ctx.resume();
+    return this._ctx;
+  }
+  _osc(type, freq, dur, vol, endFreq) {
+    try {
+      const c = this._ctx_safe();
+      const o = c.createOscillator(), g = c.createGain();
+      o.connect(g); g.connect(c.destination);
+      o.type = type;
+      o.frequency.setValueAtTime(freq, c.currentTime);
+      if (endFreq != null) o.frequency.linearRampToValueAtTime(endFreq, c.currentTime + dur);
+      g.gain.setValueAtTime(vol || 0.22, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+      o.start(c.currentTime); o.stop(c.currentTime + dur);
+    } catch(e) {}
+  }
+  _noise(dur, vol) {
+    try {
+      const c = this._ctx_safe();
+      const n = Math.floor(c.sampleRate * dur);
+      const buf = c.createBuffer(1, n, c.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      const s = c.createBufferSource(), g = c.createGain();
+      s.buffer = buf; s.connect(g); g.connect(c.destination);
+      g.gain.setValueAtTime(vol || 0.2, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+      s.start();
+    } catch(e) {}
+  }
+  playShoot()   { this._osc('sawtooth', 880, 0.08, 0.12, 320); }
+  playHit()     { this._noise(0.12, 0.28); this._osc('sine', 260, 0.15, 0.18, 70); }
+  playCoin()    { this._osc('sine', 1047, 0.1, 0.14); setTimeout(() => this._osc('sine', 1319, 0.1, 0.12), 90); }
+  playDeath()   { this._noise(0.38, 0.32); this._osc('sawtooth', 420, 0.55, 0.24, 50); }
+  playWin()     { [523,659,784,1047].forEach((f,i) => setTimeout(() => this._osc('sine', f, 0.32, 0.26), i*160)); }
+  playUpgrade() { this._osc('sine', 660, 0.08, 0.18); setTimeout(() => this._osc('sine', 880, 0.12, 0.18), 90); }
+  playBomb()    { this._osc('sawtooth', 180, 0.14, 0.28, 55); this._noise(0.28, 0.45); }
+  startAmbient() {
+    if (this._amb) return;
+    try {
+      const c = this._ctx_safe();
+      const o = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+      o.type = 'sine'; o.frequency.value = 55;
+      f.type = 'lowpass'; f.frequency.value = 150;
+      o.connect(f); f.connect(g); g.connect(c.destination);
+      g.gain.value = 0.055; o.start(); this._amb = o;
+    } catch(e) {}
+  }
+  stopAmbient() { try { if (this._amb) { this._amb.stop(); this._amb = null; } } catch(e) {} }
+}
+const Aud = new AudioManager();
+
+// ── PRELOAD SCENE ──────────────────────────────────────────────────────────
+class PreloadScene extends Phaser.Scene {
+  constructor() { super('PreloadScene'); }
+
+  create() {
+    const g = this.add.graphics();
+    const gen = (key, w, h) => { g.generateTexture(key, w, h); g.clear(); };
+
+    // spark (particle)
+    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 4, 4);
+    gen('spark', 4, 4);
+
+    // heart
+    g.fillStyle(0xff3366, 1);
+    g.fillCircle(5, 5, 4); g.fillCircle(11, 5, 4);
+    g.fillTriangle(1, 7, 15, 7, 8, 15);
+    gen('heart', 16, 16);
+
+    // coin
+    g.fillStyle(NEON.gold, 1); g.fillCircle(8, 8, 7);
+    g.fillStyle(0xffaa00, 1); g.fillCircle(8, 8, 4);
+    gen('coin', 16, 16);
+
+    // wall (tiny tile, physics body will use setDisplaySize)
+    g.fillStyle(0x0d0d2a, 1); g.fillRect(0, 0, 8, 8);
+    gen('wall_tile', 8, 8);
+
+    // bullet laser
+    g.fillStyle(0xffffff, 1); g.fillRect(0, 0, 14, 4);
+    gen('blt_laser', 14, 4);
+
+    // bullet bomb
+    g.fillStyle(NEON.orange, 1); g.fillCircle(7, 7, 7);
+    g.fillStyle(0xff3300, 1); g.fillCircle(7, 7, 4);
+    gen('blt_bomb', 14, 14);
+
+    // chest
+    g.fillStyle(NEON.gold, 1); g.fillRect(0, 5, 60, 40);
+    g.fillStyle(0xcc8800, 1); g.fillRect(0, 0, 60, 15);
+    g.lineStyle(3, 0xffee44, 1); g.strokeRect(0, 0, 60, 45);
+    g.fillStyle(0xffee44, 1); g.fillCircle(30, 22, 5);
+    gen('chest', 60, 45);
+
+    // player skins
+    Object.entries(SKINS_DATA).forEach(([name, sk]) => {
+      g.fillStyle(sk.color, sk.alpha || 1);
+      if (sk.shape === 'dragon') {
+        g.fillCircle(16, 12, 11);
+        g.fillTriangle(7, 18, 25, 18, 16, 30);
+        g.lineStyle(1, 0xffaa00, 0.8); g.strokeCircle(16, 12, 11);
+      } else if (sk.shape === 'cyber') {
+        const pts = Array.from({length:6}, (_,i) => ({
+          x: 16 + 13*Math.cos(i*Math.PI/3 - Math.PI/6),
+          y: 16 + 13*Math.sin(i*Math.PI/3 - Math.PI/6)
+        }));
+        g.fillPoints(pts, true);
+        g.lineStyle(2, NEON.green, 0.9); g.strokePoints(pts, true);
+      } else if (sk.shape === 'royal') {
+        g.fillCircle(16, 19, 11);
+        g.fillTriangle(7, 15, 12, 5, 16, 15);
+        g.fillTriangle(16, 11, 20, 3, 24, 11);
+        g.fillTriangle(20, 15, 25, 7, 29, 15);
+      } else {
+        g.fillCircle(16, 16, 13);
+        g.lineStyle(2, 0xffffff, 0.45); g.strokeCircle(16, 16, 13);
+      }
+      g.generateTexture('player_' + name, 32, 32);
+      g.clear();
+    });
+
+    g.destroy();
+
+    const t = this.add.text(W/2, H/2, 'LOADING...', {
+      font: 'bold 32px monospace', fill: '#00d4ff'
+    }).setOrigin(0.5);
+    if (t.postFX) t.postFX.addGlow(NEON.blue, 8, 0);
+
+    this.time.delayedCall(120, () => this.scene.start('LobbyScene'));
+  }
+}
+
+// ── LOBBY SCENE ────────────────────────────────────────────────────────────
+class LobbyScene extends Phaser.Scene {
+  constructor() { super('LobbyScene'); }
+
+  create() {
+    this.add.rectangle(W/2, H/2, W, H, NEON.bg);
+
+    // Ambient particles
+    this.add.particles(W/2, H/2, 'spark', {
+      x: { min: -W/2, max: W/2 },
+      y: { min: -H/2, max: H/2 },
+      lifespan: 3800, speed: { min: 8, max: 38 },
+      scale: { start: 1.4, end: 0 },
+      quantity: 1, frequency: 160,
+      tint: [NEON.blue, NEON.purple, NEON.green, NEON.red, NEON.orange],
+      blendMode: 'ADD',
+    });
+
+    // Title with glitch
+    this._title = this.add.text(W/2, 88, 'BEAST ARENA', {
+      font: 'bold 66px monospace', fill: '#00d4ff',
+      stroke: '#003355', strokeThickness: 4,
+    }).setOrigin(0.5);
+    if (this._title.postFX) this._title.postFX.addGlow(NEON.blue, 10, 0, false, 0.1, 24);
+    this.time.addEvent({ delay: 110, callback: this._glitch, callbackScope: this, loop: true });
+
+    this.add.text(W/2, 158, 'MULTIPLAYER NEON ARENA', {
+      font: '18px monospace', fill: '#334466'
+    }).setOrigin(0.5);
+
+    // Treasury
+    this._treas = this.add.text(W/2, 196, '', {
+      font: '15px monospace', fill: '#ffd700'
+    }).setOrigin(0.5);
+    this._refreshTreasury();
+
+    // Player config rows
+    this._buildRow(0, 262);
+    this._buildRow(1, 348);
+
+    this.add.text(W/2, 420, 'P1: WASD + F to shoot    P2: ARROWS + L to shoot', {
+      font: '13px monospace', fill: '#334466'
+    }).setOrigin(0.5);
+
+    // Round wins to win info
+    this.add.text(W/2, 446, `First team to win ${ROUNDS_TO_WIN} rounds wins the game`, {
+      font: '13px monospace', fill: '#445566'
+    }).setOrigin(0.5);
+
+    // PLAY button
+    const btn = this.add.text(W/2, 518, '[ PLAY ]', {
+      font: 'bold 42px monospace', fill: '#00ff88',
+      stroke: '#003322', strokeThickness: 2,
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    if (btn.postFX) btn.postFX.addGlow(NEON.green, 7, 0);
+
+    btn.on('pointerover', () => {
+      this.tweens.add({ targets: btn, scaleX: 1.07, scaleY: 1.07, duration: 100 });
+      if (btn.postFX) { btn.postFX.clear(); btn.postFX.addGlow(NEON.green, 16, 0); }
+    });
+    btn.on('pointerout', () => {
+      this.tweens.add({ targets: btn, scaleX: 1, scaleY: 1, duration: 100 });
+      if (btn.postFX) { btn.postFX.clear(); btn.postFX.addGlow(NEON.green, 7, 0); }
+    });
+    btn.on('pointerdown', () => {
+      Aud.startAmbient();
+      this.scene.start('GameScene');
+    });
+
+    // Reset stats link
+    const rst = this.add.text(W - 16, H - 16, '[RESET STATS]', {
+      font: '12px monospace', fill: '#334455'
+    }).setOrigin(1, 1).setInteractive({ useHandCursor: true });
+    rst.on('pointerdown', () => { GS.resetAll(); this._refreshTreasury(); });
+  }
+
+  _glitch() {
+    const dx = (Math.random() - 0.5) * 7;
+    this._title.setX(W/2 + dx);
+    if (Math.random() < 0.14) {
+      const cols = ['#00d4ff','#ff0040','#00ff88','#ffffff'];
+      this._title.setStyle({ fill: cols[Math.floor(Math.random() * cols.length)] });
+      this.time.delayedCall(55, () => this._title.setStyle({ fill: '#00d4ff' }));
+    }
+    this.time.delayedCall(55, () => this._title.setX(W/2));
+  }
+
+  _refreshTreasury() {
+    this._treas.setText(
+      `Treasury  —  Blue: ${GS.teams[0].treasury} coins   Red: ${GS.teams[1].treasury} coins`
+    );
+  }
+
+  _buildRow(pi, y) {
+    const cfg = GS.playerCfg[pi];
+    const col = TEAM_HEX[cfg.teamId];
+
+    this.add.text(44, y, `P${pi+1}`, {
+      font: 'bold 18px monospace', fill: col
+    }).setOrigin(0, 0.5);
+
+    const weapons = Object.keys(WEAPONS_DATA);
+    const wTxt = this.add.text(110, y, `Weapon: [ ${cfg.weapon} ]`, {
+      font: '15px monospace', fill: '#aaaaaa'
+    }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+    wTxt.on('pointerdown', () => {
+      cfg.weapon = weapons[(weapons.indexOf(cfg.weapon) + 1) % weapons.length];
+      wTxt.setText(`Weapon: [ ${cfg.weapon} ]`);
+    });
+    wTxt.on('pointerover', () => wTxt.setStyle({ fill: '#ffffff' }));
+    wTxt.on('pointerout',  () => wTxt.setStyle({ fill: '#aaaaaa' }));
+
+    const sTxt = this.add.text(430, y, `Skin: [ ${cfg.skin} ]`, {
+      font: '15px monospace', fill: '#aaaaaa'
+    }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+    sTxt.on('pointerdown', () => {
+      cfg.skin = SKIN_ORDER[(SKIN_ORDER.indexOf(cfg.skin) + 1) % SKIN_ORDER.length];
+      sTxt.setText(`Skin: [ ${cfg.skin} ]`);
+    });
+    sTxt.on('pointerover', () => sTxt.setStyle({ fill: '#ffffff' }));
+    sTxt.on('pointerout',  () => sTxt.setStyle({ fill: '#aaaaaa' }));
+  }
+}
+
+// ── PLAYER CLASS ───────────────────────────────────────────────────────────
+class Player {
+  constructor(scene, cfg, x, y) {
+    this.scene = scene;
+    this.cfg = cfg;
+    this.teamId = cfg.teamId;
+
+    this.lives = 3;
+    this.coins = 0;
+    this.speed = 200;
+    this.fireRate = WEAPONS_DATA[cfg.weapon].cooldown;
+    this.shotScale = 1;
+    this.shieldActive = false;
+    this.shieldTimer = 0;
+    this._lastFired = 0;
+    this._lastDir = 0;
+    this._upgradesGiven = 0;
+
+    const sk = SKINS_DATA[cfg.skin];
+    this.skinData = sk;
+
+    this.sprite = scene.physics.add.sprite(x, y, 'player_' + cfg.skin);
+    this.sprite.setCollideWorldBounds(true);
+    this.sprite.setTint(sk.color);
+    this.sprite.setDepth(5);
+    if (sk.alpha) this.sprite.setAlpha(sk.alpha);
+
+    if (this.sprite.postFX) {
+      this._glow = this.sprite.postFX.addGlow(sk.glowColor, 7, 0, false, 0.1, 16);
+    }
+
+    // Trail particles
+    this._trail = scene.add.particles(x, y, 'spark', {
+      follow: this.sprite,
+      lifespan: 310, speed: { min: 6, max: 28 },
+      scale: { start: 0.8, end: 0 },
+      quantity: 1, frequency: 32,
+      tint: sk.trail, blendMode: 'ADD',
+    });
+    this._trail.setDepth(3);
+
+    // Shield ring (visual)
+    this._shieldRing = scene.add.circle(x, y, 24, 0x00ff88, 0);
+    this._shieldRing.setStrokeStyle(2, NEON.green, 0).setDepth(6);
+
+    // Player label
+    this._label = scene.add.text(x, y - 30, `P${cfg.teamId + 1}`, {
+      font: '11px monospace', fill: TEAM_HEX[cfg.teamId]
+    }).setOrigin(0.5).setDepth(7);
+
+    // Keys
+    const kb = scene.input.keyboard;
+    const k = cfg.keys;
+    this._keys = {
+      up:    kb.addKey(k.up),
+      down:  kb.addKey(k.down),
+      left:  kb.addKey(k.left),
+      right: kb.addKey(k.right),
+      shoot: kb.addKey(k.shoot),
+    };
+  }
+
+  update(time, delta, bulletGroup) {
+    if (this.lives <= 0) return;
+    const { up, down, left, right, shoot } = this._keys;
+    let vx = 0, vy = 0;
+    if (left.isDown)  vx -= this.speed;
+    if (right.isDown) vx += this.speed;
+    if (up.isDown)    vy -= this.speed;
+    if (down.isDown)  vy += this.speed;
+    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+    this.sprite.setVelocity(vx, vy);
+
+    if (vx !== 0 || vy !== 0) this._lastDir = Math.atan2(vy, vx);
+
+    if (shoot.isDown && time - this._lastFired > this.fireRate) {
+      this._lastFired = time;
+      bulletGroup.fire(this, this._lastDir);
+      Aud.playShoot();
+    }
+
+    this._label.setPosition(this.sprite.x, this.sprite.y - 30);
+
+    if (this.shieldActive) {
+      this.shieldTimer -= delta;
+      this._shieldRing.setPosition(this.sprite.x, this.sprite.y);
+      if (this.shieldTimer <= 0) this._deactivateShield();
+    }
+  }
+
+  takeDamage(dmg) {
+    if (this.shieldActive || this.lives <= 0) return;
+    this.lives = Math.max(0, this.lives - dmg);
+    Aud.playHit();
+    if (this.sprite.postFX) {
+      this.sprite.postFX.clear();
+      this.sprite.postFX.addGlow(NEON.red, 14, 0);
+    }
+    this.scene.tweens.add({
+      targets: this.sprite, alpha: 0.15, duration: 75, yoyo: true, repeat: 2,
+      onComplete: () => {
+        if (this.lives > 0 && this.sprite.postFX) {
+          this.sprite.postFX.clear();
+          this.sprite.postFX.addGlow(this.skinData.glowColor, 7, 0, false, 0.1, 16);
+        }
+        if (this.skinData.alpha) this.sprite.setAlpha(this.skinData.alpha);
+        else this.sprite.setAlpha(1);
+      }
+    });
+    this.scene.cameras.main.shake(130, 0.009);
+    if (this.lives <= 0) this._die();
+  }
+
+  _die() {
+    Aud.playDeath();
+    const e = this.scene.add.particles(this.sprite.x, this.sprite.y, 'spark', {
+      lifespan: 950, speed: { min: 70, max: 270 },
+      scale: { start: 2.2, end: 0 }, quantity: 35,
+      tint: [this.skinData.color, NEON.white, NEON.gold],
+      blendMode: 'ADD', emitting: false,
+    });
+    e.explode(35, this.sprite.x, this.sprite.y);
+    this.scene.cameras.main.shake(280, 0.018);
+    this.scene.time.delayedCall(1000, () => { try { e.destroy(); } catch(_) {} });
+    this.sprite.setActive(false).setVisible(false);
+    this._trail.stop();
+    this._label.setVisible(false);
+    this.scene.events.emit('playerDied');
+  }
+
+  applyUpgrade(id) {
+    switch(id) {
+      case 'speed':  this.speed = Math.min(this.speed * 1.2, 380); break;
+      case 'shot':   this.shotScale = Math.min(this.shotScale * 1.5, 3.5); break;
+      case 'heal':   this.lives = Math.min(this.lives + 1, 3); break;
+      case 'shield': this._activateShield(); break;
+      case 'rapid':  this.fireRate = Math.max(this.fireRate * 0.5, 80); break;
+    }
+    Aud.playUpgrade();
+  }
+
+  _activateShield() {
+    this.shieldActive = true;
+    this.shieldTimer = 5000;
+    this._shieldRing.setPosition(this.sprite.x, this.sprite.y);
+    this._shieldRing.setFillStyle(0x00ff88, 0.1);
+    this._shieldRing.setStrokeStyle(2, NEON.green, 1);
+    if (this._shieldRing.postFX) this._shieldRing.postFX.addGlow(NEON.green, 8, 0);
+  }
+
+  _deactivateShield() {
+    this.shieldActive = false;
+    this._shieldRing.setFillStyle(0, 0);
+    this._shieldRing.setStrokeStyle(2, NEON.green, 0);
+    if (this._shieldRing.postFX) this._shieldRing.postFX.clear();
+  }
+}
+
+// ── BULLET GROUP ───────────────────────────────────────────────────────────
+class BulletGroup {
+  constructor(scene, teamId) {
+    this.scene = scene;
+    this.teamId = teamId;
+    this.group = scene.physics.add.group({
+      classType: Phaser.Physics.Arcade.Sprite,
+      maxSize: 50,
+    });
+  }
+
+  fire(player, dir) {
+    const wep = WEAPONS_DATA[player.cfg.weapon];
+    const angles = wep.count > 1
+      ? [-wep.spread, 0, wep.spread].map(o => dir + o)
+      : [dir];
+
+    const col = TEAM_COLORS[this.teamId];
+    angles.forEach(angle => {
+      const b = this.group.get(player.sprite.x, player.sprite.y, wep.tex);
+      if (!b) return;
+      b.setActive(true).setVisible(true).setDepth(4);
+      b.body.reset(player.sprite.x, player.sprite.y);
+      b.setScale(player.shotScale);
+      b.setTint(col);
+      b.setRotation(angle);
+      b.damage  = wep.damage;
+      b.aoe     = wep.aoe;
+      b.teamId  = this.teamId;
+      b.setVelocity(Math.cos(angle) * wep.speed, Math.sin(angle) * wep.speed);
+      if (b.postFX) { b.postFX.clear(); b.postFX.addGlow(col, 5, 0); }
+
+      this.scene.time.delayedCall(2200, () => {
+        if (b.active) { b.setActive(false).setVisible(false); b.body.reset(0, 0); }
+      });
+    });
+  }
+}
+
+// ── HUD ────────────────────────────────────────────────────────────────────
+class HUD {
+  constructor(scene) {
+    this.scene = scene;
+    this._hearts = [[], []];
+    this._coinTxts = [];
+    this._stars = [[], []];
+    this._timerTxt = null;
+    this._mapDots = [];
+    this._build();
+  }
+
+  _build() {
+    const s = this.scene, D = 20;
+
+    s.add.text(12, 6, 'BLUE', { font: 'bold 13px monospace', fill: '#00d4ff' }).setDepth(D);
+    s.add.text(W - 12, 6, 'RED', { font: 'bold 13px monospace', fill: '#ff0040' }).setOrigin(1,0).setDepth(D);
+
+    for (let i = 0; i < 3; i++) {
+      const h = s.add.image(14 + i*22, 30, 'heart').setScale(0.88).setDepth(D);
+      if (h.postFX) h.postFX.addGlow(NEON.blue, 3, 0);
+      this._hearts[0].push(h);
+    }
+    for (let i = 0; i < 3; i++) {
+      const h = s.add.image(W - 14 - i*22, 30, 'heart').setScale(0.88).setDepth(D);
+      h.setTint(NEON.red);
+      if (h.postFX) h.postFX.addGlow(NEON.red, 3, 0);
+      this._hearts[1].push(h);
+    }
+
+    const ct0 = s.add.text(12, 50, 'Coins: 0', { font: '13px monospace', fill: '#ffd700' }).setDepth(D);
+    const ct1 = s.add.text(W-12, 50, 'Coins: 0', { font: '13px monospace', fill: '#ffd700' }).setOrigin(1,0).setDepth(D);
+    this._coinTxts = [ct0, ct1];
+
+    s.add.text(W/2, 6, `Round ${GS.round + 1}`, { font: '13px monospace', fill: '#556677' }).setOrigin(0.5,0).setDepth(D);
+
+    // Win stars: blue on left of center, red on right
+    for (let i = 0; i < ROUNDS_TO_WIN; i++) {
+      const st = s.add.text(W/2 - 58 + i*24, 26, '★', { font: '17px monospace', fill: '#223344' }).setOrigin(0.5).setDepth(D);
+      this._stars[0].push(st);
+    }
+    for (let i = 0; i < ROUNDS_TO_WIN; i++) {
+      const st = s.add.text(W/2 + 14 + i*24, 26, '★', { font: '17px monospace', fill: '#223344' }).setOrigin(0.5).setDepth(D);
+      this._stars[1].push(st);
+    }
+
+    this._timerTxt = s.add.text(W/2, 50, '3:00', { font: 'bold 20px monospace', fill: '#ffffff' }).setOrigin(0.5,0).setDepth(D);
+    if (this._timerTxt.postFX) this._timerTxt.postFX.addGlow(NEON.white, 4, 0);
+
+    // Mini-map bg
+    s.add.rectangle(W-72, H-50, 82, 66, 0x050510, 0.85).setDepth(D-1).setStrokeStyle(1, NEON.blue, 0.35);
+
+    GS.playerCfg.forEach((cfg, i) => {
+      const dot = s.add.circle(W-72, H-50, 4, TEAM_COLORS[cfg.teamId]).setDepth(D);
+      if (dot.postFX) dot.postFX.addGlow(TEAM_COLORS[cfg.teamId], 4, 0);
+      this._mapDots.push(dot);
+    });
+  }
+
+  refresh(players) {
+    players.forEach(p => {
+      const ti = p.teamId;
+      this._hearts[ti].forEach((h, i) => h.setAlpha(i < Math.ceil(p.lives) ? 1 : 0.18));
+      this._coinTxts[ti].setText(`Coins: ${p.coins}`);
+    });
+    [0, 1].forEach(ti => {
+      this._stars[ti].forEach((st, i) => {
+        st.setStyle({ fill: i < GS.teams[ti].wins ? '#ffd700' : '#223344' });
+      });
+    });
+  }
+
+  update(remaining, players) {
+    const r = Math.max(0, remaining);
+    const m = Math.floor(r / 60000);
+    const s = Math.floor((r % 60000) / 1000);
+    this._timerTxt.setText(`${m}:${String(s).padStart(2,'0')}`);
+
+    players.forEach((p, i) => {
+      const mx = (W - 113) + (p.sprite.x / W) * 82;
+      const my = (H - 83)  + (p.sprite.y / H) * 66;
+      this._mapDots[i].setPosition(mx, my);
+      this._mapDots[i].setAlpha(p.lives > 0 ? 1 : 0.22);
+    });
+
+    this.refresh(players);
+  }
+}
+
+// ── GAME SCENE ─────────────────────────────────────────────────────────────
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.add.rectangle(W/2, H/2, W, H, NEON.bg);
+    this.physics.world.setBounds(0, 0, W, H);
+
+    this._roundEnded = false;
+    this._roundTimer  = 0;
+    this._roundDur    = 180000;
+    this._coinTimer   = 0;
+    this._coinInterval = 2000;
+
+    this._walls = this._buildWalls();
+
+    this._players = GS.playerCfg.map((cfg, i) => {
+      const x = i === 0 ? 75 : W - 75;
+      const y = i === 0 ? 75 : H - 75;
+      return new Player(this, cfg, x, y);
+    });
+
+    this._bulletGroups = [new BulletGroup(this, 0), new BulletGroup(this, 1)];
+
+    this._coins = this.physics.add.staticGroup();
+
+    this._hud = new HUD(this);
+
+    this._setupCollisions();
+
+    // Upgrade events
+    this.events.on('upgradeReady', player => {
+      this.time.delayedCall(0, () => {
+        this.physics.pause();
+        this.scene.launch('UpgradeScene', { player, gameScene: this });
+      });
+    });
+    this.events.on('upgradeChosen', () => {
+      this.physics.resume();
+      this._hud.refresh(this._players);
+    });
+
+    Aud.startAmbient();
+  }
+
+  _buildWalls() {
+    const walls = this.physics.add.staticGroup();
+    const defs = [
+      { x:200, y:135, w:90,  h:20 },
+      { x:600, y:135, w:90,  h:20 },
+      { x:200, y:465, w:90,  h:20 },
+      { x:600, y:465, w:90,  h:20 },
+      { x:400, y:188, w:20,  h:88 },
+      { x:400, y:412, w:20,  h:88 },
+      { x:142, y:300, w:112, h:20 },
+      { x:658, y:300, w:112, h:20 },
+      { x:308, y:300, w:68,  h:20 },
+      { x:492, y:300, w:68,  h:20 },
+    ];
+    defs.forEach(d => {
+      const w = walls.create(d.x, d.y, 'wall_tile');
+      w.setDisplaySize(d.w, d.h).refreshBody();
+      w.setVisible(false);
+      const vis = this.add.rectangle(d.x, d.y, d.w, d.h, 0x0d0d28);
+      vis.setStrokeStyle(1.5, NEON.blue, 0.75);
+      if (vis.postFX) vis.postFX.addGlow(NEON.blue, 3, 0, false, 0.1, 8);
+    });
+    // Arena border glow
+    this.add.rectangle(W/2, H/2, W, H).setStrokeStyle(2, NEON.blue, 0.35);
+    return walls;
+  }
+
+  _setupCollisions() {
+    // Players vs walls
+    this._players.forEach(p => this.physics.add.collider(p.sprite, this._walls));
+
+    // Bullets vs walls
+    this._bulletGroups.forEach(bg => {
+      this.physics.add.collider(bg.group, this._walls, (bullet) => {
+        if (!bullet.active) return;
+        if (bullet.aoe > 0) this._explode(bullet);
+        else { bullet.setActive(false).setVisible(false); bullet.body.reset(0,0); }
+      });
+    });
+
+    // Bullets vs enemy players
+    this._bulletGroups.forEach((bg, ti) => {
+      this._players.filter(p => p.teamId !== ti).forEach(ep => {
+        this.physics.add.overlap(bg.group, ep.sprite, (bullet, pSprite) => {
+          if (!bullet.active || !pSprite.active) return;
+          const pl = this._players.find(p => p.sprite === pSprite);
+          if (!pl || pl.lives <= 0) return;
+          if (bullet.aoe > 0) this._explode(bullet);
+          else {
+            pl.takeDamage(bullet.damage);
+            bullet.setActive(false).setVisible(false);
+            bullet.body.reset(0,0);
+          }
+        });
+      });
+    });
+
+    // Coins vs players
+    this._players.forEach(p => {
+      this.physics.add.overlap(p.sprite, this._coins, (pSprite, coin) => {
+        if (!coin.active) return;
+        this._collectCoin(p, coin);
+      });
+    });
+  }
+
+  _spawnCoin() {
+    const rare = Math.random() < 0.22;
+    let x, y, tries = 0;
+    do {
+      x = Phaser.Math.Between(60, W - 60);
+      y = Phaser.Math.Between(60, H - 60);
+      tries++;
+    } while (tries < 12 && (
+      (x < 130 && y < 130) || (x > W-130 && y > H-130)
+    ));
+
+    const coin = this._coins.create(x, y, 'coin');
+    coin.setScale(rare ? 1.8 : 1);
+    coin.setTint(rare ? NEON.gold : 0xffcc00);
+    coin.coinValue = rare ? 5 : 1;
+    coin.setDepth(2);
+    if (coin.postFX) coin.postFX.addGlow(NEON.gold, rare ? 8 : 3, 0);
+
+    this.tweens.add({ targets: coin, y: y - 7, duration: 660, yoyo: true, loop: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: coin, angle: 360, duration: 2200, loop: -1 });
+  }
+
+  _collectCoin(player, coin) {
+    const val = coin.coinValue || 1;
+    player.coins += val;
+    GS.teams[player.teamId].treasury += val;
+    Aud.playCoin();
+
+    const ft = this.add.text(coin.x, coin.y - 8, '+' + val, {
+      font: 'bold 17px monospace', fill: '#ffd700'
+    }).setOrigin(0.5).setDepth(15);
+    if (ft.postFX) ft.postFX.addGlow(NEON.gold, 5, 0);
+    this.tweens.add({ targets: ft, y: ft.y - 38, alpha: 0, duration: 950,
+      onComplete: () => ft.destroy() });
+
+    this.tweens.killTweensOf(coin);
+    coin.destroy();
+
+    this._hud.refresh(this._players);
+
+    const threshold = Math.floor(player.coins / 10);
+    if (threshold > player._upgradesGiven) {
+      player._upgradesGiven = threshold;
+      this.events.emit('upgradeReady', player);
+    }
+  }
+
+  _explode(bullet) {
+    const x = bullet.x, y = bullet.y, r = bullet.aoe, ti = bullet.teamId;
+    bullet.setActive(false).setVisible(false); bullet.body.reset(0,0);
+    Aud.playBomb();
+
+    this._players.forEach(p => {
+      if (p.teamId === ti || p.lives <= 0) return;
+      const d = Phaser.Math.Distance.Between(x, y, p.sprite.x, p.sprite.y);
+      if (d <= r) p.takeDamage(bullet.damage * (1 - d / r * 0.45));
+    });
+
+    const e = this.add.particles(x, y, 'spark', {
+      lifespan: 720, speed: { min: 80, max: 290 },
+      scale: { start: 2.8, end: 0 }, quantity: 45,
+      tint: [NEON.orange, NEON.red, NEON.gold, NEON.white],
+      blendMode: 'ADD', emitting: false,
+    });
+    e.explode(45, x, y);
+    this.cameras.main.shake(220, 0.016);
+    this.time.delayedCall(780, () => { try { e.destroy(); } catch(_) {} });
+  }
+
+  update(time, delta) {
+    if (this._roundEnded) return;
+    this._roundTimer += delta;
+
+    this._players.forEach((p, i) => p.update(time, delta, this._bulletGroups[p.teamId]));
+
+    this._coinTimer += delta;
+    if (this._coinTimer >= this._coinInterval) {
+      this._coinTimer = 0;
+      this._spawnCoin();
+    }
+
+    this._hud.update(this._roundDur - this._roundTimer, this._players);
+
+    const t0 = this._players.some(p => p.teamId === 0 && p.lives > 0);
+    const t1 = this._players.some(p => p.teamId === 1 && p.lives > 0);
+
+    if (!t0 || !t1 || this._roundTimer >= this._roundDur) {
+      let winner;
+      if (!t0 && !t1)  winner = GS.teams[0].treasury >= GS.teams[1].treasury ? 0 : 1;
+      else if (!t0)    winner = 1;
+      else if (!t1)    winner = 0;
+      else             winner = GS.teams[0].treasury >= GS.teams[1].treasury ? 0 : 1;
+      this._endRound(winner);
+    }
+  }
+
+  _endRound(winnerTeamId) {
+    if (this._roundEnded) return;
+    this._roundEnded = true;
+    Aud.stopAmbient();
+    Aud.playWin();
+    GS.teams[winnerTeamId].wins++;
+    GS.round++;
+    const skins = SKIN_ORDER.filter(s => s !== 'Normal');
+    GS.newSkin = skins[(GS.round - 1) % skins.length];
+    this.cameras.main.shake(340, 0.022);
+    this.time.delayedCall(1100, () => {
+      if (GS.teams[winnerTeamId].wins >= ROUNDS_TO_WIN) {
+        this.scene.start('GameOverScene', { winnerTeamId });
+      } else {
+        this.scene.start('RoundVictoryScene', { winnerTeamId });
+      }
+    });
+  }
+}
+
+// ── UPGRADE SCENE ──────────────────────────────────────────────────────────
+class UpgradeScene extends Phaser.Scene {
+  constructor() { super('UpgradeScene'); }
+
+  init(data) { this._player = data.player; this._gameScene = data.gameScene; }
+
+  create() {
+    this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.78);
+
+    const title = this.add.text(W/2, 68, 'UPGRADE AVAILABLE', {
+      font: 'bold 36px monospace', fill: '#ffd700'
+    }).setOrigin(0.5);
+    if (title.postFX) title.postFX.addGlow(NEON.gold, 10, 0);
+
+    this.add.text(W/2, 112, `P${this._player.teamId + 1} — Choose one upgrade`, {
+      font: '17px monospace', fill: TEAM_HEX[this._player.teamId]
+    }).setOrigin(0.5);
+
+    const choices = Phaser.Utils.Array.Shuffle([...UPGRADES_LIST]).slice(0, 3);
+    choices.forEach((u, i) => this._makeCard(u, i, choices.length));
+  }
+
+  _makeCard(upg, idx, total) {
+    const sp = 210, startX = W/2 - (sp * (total - 1)) / 2;
+    const x = startX + idx * sp, y = 320;
+
+    const card = this.add.rectangle(x, y, 168, 200, 0x080820);
+    card.setStrokeStyle(2, NEON.blue, 0.8);
+    if (card.postFX) card.postFX.addGlow(NEON.blue, 4, 0);
+    card.setInteractive({ useHandCursor: true });
+
+    const icon = this.add.text(x, y - 58, upg.icon, {
+      font: 'bold 42px monospace', fill: '#ffffff'
+    }).setOrigin(0.5);
+
+    const nm = this.add.text(x, y - 4, upg.name, {
+      font: 'bold 13px monospace', fill: '#ffffff',
+      wordWrap: { width: 148 }, align: 'center'
+    }).setOrigin(0.5);
+
+    const ds = this.add.text(x, y + 48, upg.desc, {
+      font: '12px monospace', fill: '#888888',
+      wordWrap: { width: 148 }, align: 'center'
+    }).setOrigin(0.5);
+
+    const objs = [card, icon, nm, ds];
+    objs.forEach(o => o.setScale(0));
+    this.tweens.add({ targets: objs, scale: 1, duration: 270, delay: idx * 85, ease: 'Back.easeOut' });
+
+    card.on('pointerover', () => {
+      this.tweens.add({ targets: card, scaleX: 1.05, scaleY: 1.05, duration: 80 });
+      if (card.postFX) { card.postFX.clear(); card.postFX.addGlow(NEON.gold, 12, 0); }
+      card.setStrokeStyle(2, NEON.gold, 1);
+    });
+    card.on('pointerout', () => {
+      this.tweens.add({ targets: card, scaleX: 1, scaleY: 1, duration: 80 });
+      if (card.postFX) { card.postFX.clear(); card.postFX.addGlow(NEON.blue, 4, 0); }
+      card.setStrokeStyle(2, NEON.blue, 0.8);
+    });
+    card.on('pointerdown', () => {
+      this._player.applyUpgrade(upg.id);
+      this.tweens.add({
+        targets: objs, alpha: 0, duration: 240,
+        onComplete: () => {
+          this._gameScene.events.emit('upgradeChosen');
+          this.scene.stop();
+        }
+      });
+    });
+  }
+}
+
+// ── ROUND VICTORY SCENE ────────────────────────────────────────────────────
+class RoundVictoryScene extends Phaser.Scene {
+  constructor() { super('RoundVictoryScene'); }
+
+  init(data) {
+    this._winnerTeamId = data.winnerTeamId;
+    this._skinName = GS.newSkin || 'Dragon';
+    this._opened = false;
+  }
+
+  create() {
+    this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.92);
+
+    const wColor = TEAM_COLORS[this._winnerTeamId];
+    const wHex   = TEAM_HEX[this._winnerTeamId];
+
+    const rt = this.add.text(W/2, 52, `ROUND ${GS.round} COMPLETE`, {
+      font: 'bold 28px monospace', fill: '#ffffff'
+    }).setOrigin(0.5).setScale(0);
+    if (rt.postFX) rt.postFX.addGlow(NEON.white, 5, 0);
+    this.tweens.add({ targets: rt, scale: 1, duration: 400, ease: 'Back.easeOut' });
+
+    const wt = this.add.text(W/2, 100, `${GS.teams[this._winnerTeamId].name.toUpperCase()} WINS THE ROUND!`, {
+      font: 'bold 30px monospace', fill: wHex
+    }).setOrigin(0.5).setScale(0);
+    if (wt.postFX) wt.postFX.addGlow(wColor, 10, 0);
+    this.tweens.add({ targets: wt, scale: 1, duration: 440, delay: 140, ease: 'Back.easeOut' });
+
+    this.add.text(W/2, 142, `Treasury: ${GS.teams[this._winnerTeamId].treasury} coins`, {
+      font: '16px monospace', fill: '#ffd700'
+    }).setOrigin(0.5);
+
+    [0,1].forEach(ti => {
+      const stars = '★'.repeat(GS.teams[ti].wins) + '☆'.repeat(ROUNDS_TO_WIN - GS.teams[ti].wins);
+      this.add.text(W/2, 168 + ti*22, `${GS.teams[ti].name}: ${stars}`, {
+        font: '15px monospace', fill: TEAM_HEX[ti]
+      }).setOrigin(0.5);
+    });
+
+    // Chest
+    this._chest = this.add.image(W/2, H + 80, 'chest').setScale(1.4);
+    if (this._chest.postFX) this._chest.postFX.addGlow(NEON.gold, 14, 0);
+
+    this.tweens.add({
+      targets: this._chest, y: 376, duration: 920, ease: 'Bounce.easeOut',
+      onComplete: () => this._readyChest()
+    });
+
+    this._openPrompt = this.add.text(W/2, 454, 'CLICK OR PRESS KEY TO OPEN!', {
+      font: '19px monospace', fill: '#ffffff'
+    }).setOrigin(0.5).setAlpha(0);
+  }
+
+  _readyChest() {
+    this.tweens.add({ targets: this._chest, scaleX: 1.5, scaleY: 1.5, duration: 500, yoyo: true, loop: -1 });
+    this.tweens.add({ targets: this._openPrompt, alpha: 1, duration: 280 });
+    this.tweens.add({ targets: this._openPrompt, alpha: 0.28, duration: 620, yoyo: true, loop: -1, delay: 340 });
+    this.input.once('pointerdown', () => this._openChest());
+    this.input.keyboard.once('keydown', () => this._openChest());
+  }
+
+  _openChest() {
+    if (this._opened) return;
+    this._opened = true;
+    this.tweens.killTweensOf(this._chest);
+    this._openPrompt.setVisible(false);
+    this.tweens.add({
+      targets: this._chest, x: `+=9`, duration: 42, yoyo: true, repeat: 7,
+      onComplete: () => this._burst()
+    });
+  }
+
+  _burst() {
+    const cx = this._chest.x, cy = this._chest.y;
+    this._chest.setVisible(false);
+
+    const e = this.add.particles(cx, cy, 'spark', {
+      lifespan: 1300, speed: { min: 90, max: 380 },
+      scale: { start: 3.2, end: 0 }, quantity: 75,
+      tint: [NEON.gold, NEON.orange, NEON.white, NEON.green, NEON.blue, NEON.red],
+      blendMode: 'ADD', emitting: false,
+    });
+    e.explode(75, cx, cy);
+    this.time.delayedCall(1400, () => { try { e.destroy(); } catch(_) {} });
+
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const ray = this.add.rectangle(cx, cy, 5, 250, NEON.gold, 0.75);
+      ray.setOrigin(0.5, 1).setRotation(angle);
+      this.tweens.add({ targets: ray, scaleY: 0, alpha: 0, duration: 900, ease: 'Quad.easeOut' });
+    }
+
+    this.cameras.main.shake(300, 0.021);
+    this.time.delayedCall(480, () => this._revealSkin(cx, cy));
+  }
+
+  _revealSkin(cx, cy) {
+    const sk = SKINS_DATA[this._skinName];
+    if (!sk) { this._showContinue(); return; }
+    const colorHex = `#${(sk.glowColor).toString(16).padStart(6,'0')}`;
+
+    const txt = this.add.text(W/2, cy - 85, `${this._skinName.toUpperCase()} SKIN UNLOCKED!`, {
+      font: 'bold 38px monospace', fill: colorHex,
+      stroke: '#000000', strokeThickness: 5,
+    }).setOrigin(0.5).setScale(0);
+    if (txt.postFX) txt.postFX.addGlow(sk.glowColor, 14, 0);
+    this.tweens.add({ targets: txt, scale: 1, duration: 540, ease: 'Back.easeOut' });
+
+    const preview = this.add.sprite(W/2, cy + 58, 'player_' + this._skinName);
+    preview.setTint(sk.color).setScale(3.2);
+    if (sk.alpha) preview.setAlpha(sk.alpha);
+    if (preview.postFX) preview.postFX.addGlow(sk.glowColor, 12, 0);
+
+    this.tweens.add({ targets: preview, angle: 360, duration: 1000, repeat: 2 });
+    this.tweens.add({ targets: preview, scaleX: 3.6, scaleY: 3.6, duration: 380, yoyo: true, repeat: 3 });
+
+    const added = this.add.text(W/2, cy + 130, '+ Added to collection!', {
+      font: '16px monospace', fill: '#00ff88'
+    }).setOrigin(0.5).setAlpha(0);
+    this.tweens.add({ targets: added, alpha: 1, duration: 600, delay: 600 });
+
+    this.time.delayedCall(2400, () => this._showContinue());
+  }
+
+  _showContinue() {
+    const btn = this.add.text(W/2, H - 42, '[ CONTINUE ]', {
+      font: 'bold 26px monospace', fill: '#00ff88'
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    if (btn.postFX) btn.postFX.addGlow(NEON.green, 7, 0);
+    this.tweens.add({ targets: btn, alpha: 0.3, duration: 720, yoyo: true, loop: -1 });
+
+    const go = () => { Aud.startAmbient(); this.scene.start('GameScene'); };
+    btn.on('pointerdown', go);
+    this.input.keyboard.once('keydown-ENTER', go);
+    this.input.keyboard.once('keydown-SPACE', go);
+  }
+}
+
+// ── GAME OVER SCENE ────────────────────────────────────────────────────────
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+  init(data) { this._winnerTeamId = data.winnerTeamId; }
+
+  create() {
+    this.add.rectangle(W/2, H/2, W, H, NEON.bg);
+
+    // Confetti rain
+    [NEON.blue, NEON.red, NEON.green, NEON.gold, NEON.purple, NEON.orange].forEach((col, i) => {
+      this.add.particles(Phaser.Math.Between(80, 720), -12, 'spark', {
+        lifespan: 5500, speed: { min: 55, max: 140 },
+        angle: { min: 65, max: 115 },
+        scale: { start: 2.2, end: 0 },
+        quantity: 1, frequency: 110 + i * 35,
+        tint: col, gravityY: 85, blendMode: 'ADD',
+      });
+    });
+
+    const wColor = TEAM_COLORS[this._winnerTeamId];
+    const wHex   = TEAM_HEX[this._winnerTeamId];
+
+    const title = this.add.text(W/2, 115, GS.teams[this._winnerTeamId].name.toUpperCase() + '\nWINS!', {
+      font: 'bold 70px monospace', fill: wHex,
+      align: 'center', lineSpacing: 8
+    }).setOrigin(0.5).setScale(0);
+    if (title.postFX) title.postFX.addGlow(wColor, 18, 0);
+    this.tweens.add({ targets: title, scale: 1, duration: 700, ease: 'Back.easeOut' });
+
+    [0,1].forEach(ti => {
+      const t = GS.teams[ti];
+      this.add.text(W/2, 310 + ti * 54,
+        `${t.name}: ${t.wins} wins  ·  ${t.treasury} coins`,
+        { font: '22px monospace', fill: TEAM_HEX[ti] }
+      ).setOrigin(0.5);
+    });
+
+    const again = this.add.text(W/2, 454, '[ PLAY AGAIN ]', {
+      font: 'bold 34px monospace', fill: '#00ff88'
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    if (again.postFX) again.postFX.addGlow(NEON.green, 9, 0);
+    this.tweens.add({ targets: again, alpha: 0.32, duration: 740, yoyo: true, loop: -1 });
+
+    again.on('pointerover', () => {
+      if (again.postFX) { again.postFX.clear(); again.postFX.addGlow(NEON.green, 20, 0); }
+      this.tweens.add({ targets: again, scaleX: 1.07, scaleY: 1.07, duration: 90 });
+    });
+    again.on('pointerout', () => {
+      if (again.postFX) { again.postFX.clear(); again.postFX.addGlow(NEON.green, 9, 0); }
+      this.tweens.add({ targets: again, scaleX: 1, scaleY: 1, duration: 90 });
+    });
+    again.on('pointerdown', () => { GS.resetAll(); this.scene.start('LobbyScene'); });
+
+    this.add.text(W/2, 524, `${GS.round} rounds played  ·  ${GS.round} skins unlocked`, {
+      font: '14px monospace', fill: '#334455'
+    }).setOrigin(0.5);
+  }
+}
+
+// ── BOOT ───────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  new Phaser.Game({
+    type: Phaser.WEBGL,
+    width: W, height: H,
+    backgroundColor: '#0a0a0f',
+    parent: document.body,
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+    scene: [PreloadScene, LobbyScene, GameScene, UpgradeScene, RoundVictoryScene, GameOverScene],
+  });
+});
+</script>
+</body>
+</html>
